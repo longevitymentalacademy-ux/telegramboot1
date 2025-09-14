@@ -16,6 +16,12 @@ from database import (
     get_pending_to_reschedule,
 )
 from messages import MESSAGES_30_DAYS
+from sheets_integration import (
+    initialize_spreadsheet,
+    log_user_to_sheets,
+    update_user_progress,
+    get_user_stats
+)
 
 
 TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
@@ -40,6 +46,12 @@ async def send_day_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
         mark_sent(user_id, day_index)
+        
+        # Update user progress in Google Sheets
+        current_day = day_index + 1  # Convert to 1-based day number
+        message_id = f"G{current_day}"  # G1, G2, G3, etc.
+        update_user_progress(user_id, current_day, message_id)
+        
         # Schedule next day if exists and not already scheduled
         next_day = day_index + 1
         if next_day < len(MESSAGES_30_DAYS):
@@ -52,20 +64,24 @@ async def send_day_message(context: ContextTypes.DEFAULT_TYPE) -> None:
         pass
 
 
-def get_next_run_time_utc(days_from_now: int, hour_utc: int) -> datetime:
+def get_next_run_time_utc(day_number: int, hour_utc: int) -> datetime:
+    """Calculate when to send a specific day's message.
+    day_number: 1-based day number (Day 2 = day_number 2)
+    """
     now = datetime.utcnow()
     if FAST_SCHEDULE_HOURS > 0:
-        # Hour-based acceleration for testing: each message is 1 hour after the previous
-        return now + timedelta(hours=FAST_SCHEDULE_HOURS)
+        # Hour-based testing: Day 2 = 1 hour, Day 3 = 2 hours, etc.
+        return now + timedelta(hours=FAST_SCHEDULE_HOURS * (day_number - 1))
     if FAST_SCHEDULE_MINUTES > 0:
-        # Minute-based acceleration for testing: each message is 1 minute after the previous
-        return now + timedelta(minutes=FAST_SCHEDULE_MINUTES)
-    # Normal daily schedule: each message is 1 day after the previous
-    target = datetime(year=now.year, month=now.month, day=now.day, hour=hour_utc, minute=0)
-    if target <= now:
-        target = target + timedelta(days=1)
-    target = target + timedelta(days=days_from_now)
-    return target
+        # Minute-based testing: Day 2 = 1 minute, Day 3 = 2 minutes, etc.
+        return now + timedelta(minutes=FAST_SCHEDULE_MINUTES * (day_number - 1))
+    
+    # Normal daily schedule: Day 2 = tomorrow at hour_utc, Day 3 = day after, etc.
+    base_time = datetime(year=now.year, month=now.month, day=now.day, hour=hour_utc, minute=0)
+    if base_time <= now:
+        base_time = base_time + timedelta(days=1)
+    
+    return base_time + timedelta(days=day_number - 2)  # Day 2 = +0 days, Day 3 = +1 day, etc.
 
 
 async def schedule_day_message(app: Application, user_id: int, day_index: int) -> None:
@@ -74,7 +90,9 @@ async def schedule_day_message(app: Application, user_id: int, day_index: int) -
     if existing_jobs:
         return  # Job already scheduled, skip
     
-    when = get_next_run_time_utc(days_from_now=day_index, hour_utc=DEFAULT_TIME_HOUR)
+    # Convert 0-based day_index to 1-based day number for timing calculation
+    day_number = day_index + 1  # day_index 1 = Day 2, day_index 2 = Day 3, etc.
+    when = get_next_run_time_utc(day_number, DEFAULT_TIME_HOUR)
     mark_scheduled(user_id, day_index, when.isoformat())
     app.job_queue.run_once(
         send_day_message,
@@ -102,27 +120,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         last_name=user.last_name,
         source=source or "organic",
     )
+    
+    # Log user to Google Sheets
+    log_user_to_sheets(
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        source=source or "organic"
+    )
 
-    # Determine the next day to send (0-based)
-    next_day = get_next_day_to_send(user.id)
-    if next_day >= len(MESSAGES_30_DAYS):
-        if update.message:
-            await update.message.reply_text("You’ve already completed the 30-day series. 🎉")
-        else:
-            await context.bot.send_message(chat_id=user.id, text="You’ve already completed the 30-day series. 🎉")
-        return
+    # Clear any existing scheduled jobs for this user to restart fresh
+    all_jobs = context.application.job_queue.jobs()
+    for job in all_jobs:
+        if job.name and job.name.startswith(f"daily-{user.id}-"):
+            job.schedule_removal()
 
-    # Always start from Day 1 when user clicks /start
+    # Always restart from Day 1 when user clicks /start
     # Send Day 1 immediately, then schedule Day 2+
     try:
-        if 0 < len(MESSAGES_30_DAYS):
+        if len(MESSAGES_30_DAYS) > 0:
             await context.bot.send_message(chat_id=user.id, text=MESSAGES_30_DAYS[0])
             mark_sent(user.id, 0)
     except Exception:
         pass
     
-    # Schedule from Day 2 (index 1) onwards
-    if 1 < len(MESSAGES_30_DAYS):
+    # Schedule Day 2 onwards in strict sequence
+    if len(MESSAGES_30_DAYS) > 1:
         await schedule_day_message(context.application, user.id, 1)
 
     origin = f" from {source}" if source else ""
@@ -144,6 +168,21 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("pong")
 
 
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show user statistics from Google Sheets."""
+    stats_data = get_user_stats()
+    if stats_data:
+        stats_text = f"""📊 **Bot Statistics**
+
+👥 Total Users: {stats_data['total_users']}
+🟢 Active Users: {stats_data['active_users']}
+✅ Completed Users: {stats_data['completed_users']}
+📊 Average Day: {stats_data['avg_day']}"""
+        await update.message.reply_text(stats_text, parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text("Unable to fetch statistics at the moment.")
+
+
 async def reschedule_all_pending(app: Application) -> None:
     # Reschedule any messages that were planned but not sent
     pending = get_pending_to_reschedule(datetime.utcnow().isoformat())
@@ -154,8 +193,9 @@ async def reschedule_all_pending(app: Application) -> None:
         existing = app.job_queue.get_jobs_by_name(f"daily-{user_id}-{day_index}")
         if existing:
             continue
-        # Schedule the next message based on current time
-        when = get_next_run_time_utc(day_index, DEFAULT_TIME_HOUR)
+        # Convert 0-based day_index to 1-based day number
+        day_number = day_index + 1
+        when = get_next_run_time_utc(day_number, DEFAULT_TIME_HOUR)
         mark_scheduled(user_id, day_index, when.isoformat())
         app.job_queue.run_once(
             send_day_message,
@@ -168,6 +208,7 @@ async def reschedule_all_pending(app: Application) -> None:
 
 async def on_startup(app: Application) -> None:
     initialize_database()
+    initialize_spreadsheet()  # Initialize Google Sheets
     # Ensure polling works even if a webhook was previously set
     try:
         await app.bot.delete_webhook(drop_pending_updates=True)
@@ -194,6 +235,7 @@ def main() -> None:
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("ping", ping))
+    application.add_handler(CommandHandler("stats", stats))
 
     # Get port from Heroku or use default
     port = int(os.environ.get("PORT", 5000))

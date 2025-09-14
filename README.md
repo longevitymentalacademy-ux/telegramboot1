@@ -31,3 +31,4 @@ A Python bot that sends automated daily messages for 30 days to new users who jo
 - The bot stores data in `bot.db` next to the scripts.
 
 
+
