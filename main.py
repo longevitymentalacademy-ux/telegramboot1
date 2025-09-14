@@ -16,12 +16,20 @@ from database import (
     get_pending_to_reschedule,
 )
 from messages import MESSAGES_30_DAYS
-from sheets_integration import (
-    initialize_spreadsheet,
-    log_user_to_sheets,
-    update_user_progress,
-    get_user_stats
-)
+try:
+    from sheets_integration import (
+        initialize_spreadsheet,
+        log_user_to_sheets,
+        update_user_progress,
+        get_user_stats
+    )
+    SHEETS_ENABLED = True
+except ImportError:
+    SHEETS_ENABLED = False
+    def initialize_spreadsheet(): return True
+    def log_user_to_sheets(*args): return True
+    def update_user_progress(*args): return True
+    def get_user_stats(): return None
 
 
 TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
@@ -208,7 +216,8 @@ async def reschedule_all_pending(app: Application) -> None:
 
 async def on_startup(app: Application) -> None:
     initialize_database()
-    initialize_spreadsheet()  # Initialize Google Sheets
+    if SHEETS_ENABLED:
+        initialize_spreadsheet()  # Initialize Google Sheets only if enabled
     # Ensure polling works even if a webhook was previously set
     try:
         await app.bot.delete_webhook(drop_pending_updates=True)
