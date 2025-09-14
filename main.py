@@ -144,12 +144,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if job.name and job.name.startswith(f"daily-{user.id}-"):
             job.schedule_removal()
 
+    # Reset user progress in database - force restart from Day 1
+    from database import get_conn
+    with get_conn() as conn:
+        # Clear all previous message records for this user
+        conn.execute("DELETE FROM schedules WHERE user_id = ?", (user.id,))
+
     # Always restart from Day 1 when user clicks /start
     # Send Day 1 immediately, then schedule Day 2+
     try:
         if len(MESSAGES_30_DAYS) > 0:
             await context.bot.send_message(chat_id=user.id, text=MESSAGES_30_DAYS[0])
             mark_sent(user.id, 0)
+            if SHEETS_ENABLED:
+                update_user_progress(user.id, 1, "G1")
     except Exception:
         pass
     
@@ -173,7 +181,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("pong")
+    try:
+        await update.message.reply_text("pong")
+    except Exception as e:
+        print(f"Ping error: {e}")
+        try:
+            await context.bot.send_message(chat_id=update.effective_user.id, text="pong")
+        except Exception as e2:
+            print(f"Ping fallback error: {e2}")
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
