@@ -34,6 +34,7 @@ except ImportError:
 
 TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
 DEFAULT_TIME_HOUR = int(os.getenv("DAILY_MESSAGE_HOUR", "9"))  # 9 AM UTC by default
+MESSAGE_INTERVAL_HOURS = int(os.getenv("MESSAGE_INTERVAL_HOURS", "2"))  # 2 hours by default
 # If set to a positive integer, use hour/minute-based scheduling for testing instead of days
 FAST_SCHEDULE_HOURS = int(os.getenv("FAST_SCHEDULE_HOURS", "0"))
 FAST_SCHEDULE_MINUTES = int(os.getenv("FAST_SCHEDULE_MINUTES", "0"))
@@ -84,12 +85,8 @@ def get_next_run_time_utc(day_number: int, hour_utc: int) -> datetime:
         # Minute-based testing: Day 2 = 1 minute, Day 3 = 2 minutes, etc.
         return now + timedelta(minutes=FAST_SCHEDULE_MINUTES * (day_number - 1))
     
-    # Normal daily schedule: Day 2 = tomorrow at hour_utc, Day 3 = day after, etc.
-    base_time = datetime(year=now.year, month=now.month, day=now.day, hour=hour_utc, minute=0)
-    if base_time <= now:
-        base_time = base_time + timedelta(days=1)
-    
-    return base_time + timedelta(days=day_number - 2)  # Day 2 = +0 days, Day 3 = +1 day, etc.
+    # 2-hour interval schedule: Day 2 = 2 hours, Day 3 = 4 hours, etc.
+    return now + timedelta(hours=MESSAGE_INTERVAL_HOURS * (day_number - 1))
 
 
 async def schedule_day_message(app: Application, user_id: int, day_index: int) -> None:
@@ -158,6 +155,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             mark_sent(user.id, 0)
             if SHEETS_ENABLED:
                 update_user_progress(user.id, 1, "G1")
+            
+            # Send Italian notification about automatic messaging
+            italian_notification = """
+🔔 **Notifica Automatica**
+
+Ora inizierai a ricevere messaggi automatici ogni 2 ore per i prossimi 30 giorni come parte del tuo percorso nella Longevity Mental Academy.
+
+📅 **Programma**: Un messaggio ogni 2 ore
+⏰ **Durata**: 30 giorni completi
+🎯 **Obiettivo**: La tua trasformazione mentale step by step
+
+Preparati per questo viaggio di crescita personale! 🚀
+            """
+            await context.bot.send_message(chat_id=user.id, text=italian_notification, parse_mode=ParseMode.MARKDOWN)
     except Exception:
         pass
     
@@ -172,7 +183,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif FAST_SCHEDULE_MINUTES > 0:
         schedule_text = f"every {FAST_SCHEDULE_MINUTES} minute(s) for testing."
     else:
-        schedule_text = f"daily at {DEFAULT_TIME_HOUR:02d}:00 UTC."
+        schedule_text = f"every {MESSAGE_INTERVAL_HOURS} hours."
     welcome_text = f"Welcome{origin}! You will receive messages {schedule_text}"
     if update.message:
         await update.message.reply_text(welcome_text)
