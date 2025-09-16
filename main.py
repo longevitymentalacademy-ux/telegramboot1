@@ -96,7 +96,8 @@ async def send_day_message(context: ContextTypes.DEFAULT_TYPE) -> None:
             # Check if next day is already scheduled
             existing_jobs = context.application.job_queue.get_jobs_by_name(f"daily-{user_id}-{next_day}")
             if not existing_jobs:
-                await schedule_day_message(context.application, user_id, next_day)
+                # Schedule next message exactly MESSAGE_INTERVAL_HOURS from now
+                await schedule_day_message(context.application, user_id, next_day, delay_hours=MESSAGE_INTERVAL_HOURS)
     except Exception:
         # Intentionally minimal: do not crash job queue for a single failure
         pass
@@ -118,15 +119,22 @@ def get_next_run_time_utc(day_number: int, hour_utc: int) -> datetime:
     return now + timedelta(hours=MESSAGE_INTERVAL_HOURS * (day_number - 1))
 
 
-async def schedule_day_message(app: Application, user_id: int, day_index: int) -> None:
+async def schedule_day_message(app: Application, user_id: int, day_index: int, delay_hours: int = None) -> None:
     # Check if job already exists to avoid duplicates
     existing_jobs = app.job_queue.get_jobs_by_name(f"daily-{user_id}-{day_index}")
     if existing_jobs:
         return  # Job already scheduled, skip
     
-    # Convert 0-based day_index to 1-based day number for timing calculation
-    day_number = day_index + 1  # day_index 1 = Day 2, day_index 2 = Day 3, etc.
-    when = get_next_run_time_utc(day_number, DEFAULT_TIME_HOUR)
+    # Calculate when to send this message
+    now = datetime.utcnow()
+    if delay_hours is not None:
+        # Use specific delay (for immediate scheduling after sending previous message)
+        when = now + timedelta(hours=delay_hours)
+    else:
+        # Use standard interval calculation (for initial scheduling)
+        day_number = day_index + 1  # day_index 1 = Day 2, day_index 2 = Day 3, etc.
+        when = get_next_run_time_utc(day_number, DEFAULT_TIME_HOUR)
+    
     mark_scheduled(user_id, day_index, when.isoformat())
     app.job_queue.run_once(
         send_day_message,
@@ -201,9 +209,9 @@ Preparati per questo viaggio di crescita personale! 🚀
     except Exception:
         pass
     
-    # Schedule Day 2 onwards in strict sequence
+    # Schedule Day 2 exactly MESSAGE_INTERVAL_HOURS from now
     if len(MESSAGES_30_DAYS) > 1:
-        await schedule_day_message(context.application, user.id, 1)
+        await schedule_day_message(context.application, user.id, 1, delay_hours=MESSAGE_INTERVAL_HOURS)
 
     origin = f" from {source}" if source else ""
     # Compose welcome text based on schedule mode
@@ -272,18 +280,8 @@ async def reschedule_all_pending(app: Application) -> None:
 async def on_startup(app: Application) -> None:
     initialize_database()
     
-    # TEMPORARY: Clear database on startup (remove this after first deploy)
-    import sqlite3
-    try:
-        conn = sqlite3.connect('bot.db')
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM schedules')
-        cursor.execute('DELETE FROM users')
-        conn.commit()
-        conn.close()
-        print("🗑️ Database cleared on startup!")
-    except Exception as e:
-        print(f"Database clear error: {e}")
+    # Production deployment - database persists across restarts
+    print("🚀 Bot starting with accurate 2-hour interval scheduling...")
     
     if SHEETS_ENABLED:
         initialize_spreadsheet()  # Initialize Google Sheets only if enabled
