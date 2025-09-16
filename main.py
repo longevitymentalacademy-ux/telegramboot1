@@ -40,29 +40,6 @@ MESSAGE_INTERVAL_HOURS = int(os.getenv("MESSAGE_INTERVAL_HOURS", "2"))  # 2 hour
 # If set to a positive integer, use hour/minute-based scheduling for testing instead of days
 FAST_SCHEDULE_HOURS = int(os.getenv("FAST_SCHEDULE_HOURS", "0"))
 FAST_SCHEDULE_MINUTES = int(os.getenv("FAST_SCHEDULE_MINUTES", "0"))
-PORT = int(os.getenv("PORT", "10000"))  # Render provides PORT env var
-
-
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/" or self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"Telegram Bot is running!")
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def log_message(self, format, *args):
-        # Suppress HTTP server logs
-        pass
-
-
-def start_health_server():
-    """Start a simple HTTP server for Render health checks"""
-    server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
-    server.serve_forever()
 
 
 async def send_day_message(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -267,6 +244,20 @@ async def reschedule_all_pending(app: Application) -> None:
 
 async def on_startup(app: Application) -> None:
     initialize_database()
+    
+    # TEMPORARY: Clear database on startup (remove this after first deploy)
+    import sqlite3
+    try:
+        conn = sqlite3.connect('bot.db')
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM schedules')
+        cursor.execute('DELETE FROM users')
+        conn.commit()
+        conn.close()
+        print("🗑️ Database cleared on startup!")
+    except Exception as e:
+        print(f"Database clear error: {e}")
+    
     if SHEETS_ENABLED:
         initialize_spreadsheet()  # Initialize Google Sheets only if enabled
     # Ensure polling works even if a webhook was previously set
@@ -297,12 +288,11 @@ def main() -> None:
     application.add_handler(CommandHandler("ping", ping))
     application.add_handler(CommandHandler("stats", stats))
 
-    # Start health check server in background thread
-    health_thread = threading.Thread(target=start_health_server, daemon=True)
-    health_thread.start()
+    # Get port from Heroku or use default
+    port = int(os.environ.get("PORT", 5000))
     
     # Run the bot
-    print(f"Bot starting with health server on port {PORT}")
+    print(f"Bot starting on port {port}")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
