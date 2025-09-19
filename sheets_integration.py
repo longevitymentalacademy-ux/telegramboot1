@@ -1,4 +1,5 @@
 import os
+import json
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -25,8 +26,21 @@ def _get_worksheet():
         return worksheet
 
     try:
-        # Authenticate using the service account file
-        creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+        creds = None
+        # Try to load credentials from environment variable (for Railway)
+        creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        if creds_json_str:
+            try:
+                creds_info = json.loads(creds_json_str)
+                creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+            except json.JSONDecodeError as e:
+                print(f"CRITICAL ERROR: Could not parse GOOGLE_CREDENTIALS_JSON. Make sure it's valid JSON. Error: {e}")
+                return None
+        
+        # If env var is not found, fall back to file (for local testing)
+        if not creds:
+            creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+        
         client = gspread.authorize(creds)
         
         # Open the spreadsheet and select the worksheet
