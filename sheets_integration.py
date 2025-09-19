@@ -28,10 +28,10 @@ def _get_worksheet():
     try:
         creds = None
         # Try to load credentials from environment variable (for Railway)
-        creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON")
+        # --- MODIFIED: Check for multiple possible environment variable names ---
+        creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
         
-        # --- NEW DEBUGGING LINE ---
-        print(f"DEBUG: Found GOOGLE_CREDENTIALS_JSON variable: {bool(creds_json_str)}")
+        print(f"DEBUG: Found Google credentials environment variable: {bool(creds_json_str)}")
 
         if creds_json_str:
             try:
