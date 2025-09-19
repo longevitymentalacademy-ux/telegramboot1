@@ -18,20 +18,12 @@ from database import (
     get_pending_to_reschedule,
 )
 from messages import MESSAGES_30_DAYS
-try:
-    from sheets_integration import (
-        initialize_spreadsheet,
-        log_user_to_sheets,
-        update_user_progress,
-        get_user_stats
-    )
-    SHEETS_ENABLED = True
-except ImportError:
-    SHEETS_ENABLED = False
-    def initialize_spreadsheet(): return True
-    def log_user_to_sheets(*args): return True
-    def update_user_progress(*args): return True
-    def get_user_stats(): return None
+from sheets_integration import (
+    initialize_spreadsheet,
+    log_user_to_sheets,
+    update_user_progress,
+    get_user_stats
+)
 
 
 TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
@@ -190,8 +182,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if len(MESSAGES_30_DAYS) > 0:
             await context.bot.send_message(chat_id=user.id, text=MESSAGES_30_DAYS[0])
             mark_sent(user.id, 0)
-            if SHEETS_ENABLED:
-                update_user_progress(user.id, 1, "G1")
+            update_user_progress(user.id, 1, "G1")
             
             # Send Italian notification about automatic messaging
             italian_notification = """
@@ -279,12 +270,11 @@ async def reschedule_all_pending(app: Application) -> None:
 
 async def on_startup(app: Application) -> None:
     initialize_database()
+    initialize_spreadsheet()  # Initialize Google Sheets
     
     # Production deployment - database persists across restarts
     print("🚀 Bot starting with accurate 2-hour interval scheduling...")
     
-    if SHEETS_ENABLED:
-        initialize_spreadsheet()  # Initialize Google Sheets only if enabled
     # Ensure polling works even if a webhook was previously set
     try:
         await app.bot.delete_webhook(drop_pending_updates=True)

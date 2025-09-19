@@ -1,100 +1,110 @@
-# Google Sheets Integration Setup
+This guide will walk you through setting up the necessary credentials to allow your Python application to securely access and modify a Google Sheet.
 
-This guide will help you connect your Telegram bot to Google Sheets for real-time user data tracking.
+### Step 1: Create a Google Cloud Platform (GCP) Project
 
-## Step 1: Create Google Sheets Spreadsheet
+1.  **Navigate to the Google Cloud Console:**
+    *   Go to [https://console.cloud.google.com/](https://console.cloud.google.com/).
+    *   If you don't have an account, you'll need to create one.
 
-1. Go to [Google Sheets](https://sheets.google.com)
-2. Create a new spreadsheet
-3. Name it "Telegram Bot Users" or similar
-4. Copy the spreadsheet ID from the URL:
-   - URL: `https://docs.google.com/spreadsheets/d/1ABC123XYZ789/edit`
-   - ID: `1ABC123XYZ789`
+2.  **Create a New Project:**
+    *   In the top navigation bar, click the project selection dropdown (it might say "Select a project").
+    *   In the dialog that appears, click **"New Project"**.
+    *   Enter a **Project Name** (e.g., "Telegram Bot Integration").
+    *   Select an organization or leave it as "No organization".
+    *   Click **"Create"**. Wait for the project to be provisioned.
 
-## Step 2: Create Google Service Account
+3.  **Select Your Project:**
+    *   Once created, ensure your new project is selected in the top dropdown menu.
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create a new project or select existing one
-3. Enable the Google Sheets API:
-   - Go to "APIs & Services" > "Library"
-   - Search for "Google Sheets API" and enable it
-   - Search for "Google Drive API" and enable it
+### Step 2: Enable Required APIs
 
-4. Create Service Account:
-   - Go to "APIs & Services" > "Credentials"
-   - Click "Create Credentials" > "Service Account"
-   - Name it "telegram-bot-sheets"
-   - Click "Create and Continue"
-   - Skip role assignment, click "Continue"
-   - Click "Done"
+Your project needs permission to use the Google Drive and Google Sheets services.
 
-5. Generate JSON Key:
-   - Click on your service account
-   - Go to "Keys" tab
-   - Click "Add Key" > "Create New Key"
-   - Choose "JSON" format
-   - Download the JSON file
+1.  **Go to the API Library:**
+    *   In the navigation menu (☰), go to **"APIs & Services" -> "Library"**.
 
-## Step 3: Share Spreadsheet with Service Account
+2.  **Enable the Google Drive API:**
+    *   In the search bar, type "Google Drive API" and select it from the results.
+    *   Click the **"Enable"** button.
 
-1. Open the downloaded JSON file
-2. Copy the `client_email` value (looks like: `telegram-bot-sheets@project-123.iam.gserviceaccount.com`)
-3. In your Google Spreadsheet:
-   - Click "Share" button
-   - Paste the service account email
-   - Give it "Editor" permissions
-   - Click "Send"
+3.  **Enable the Google Sheets API:**
+    *   Go back to the API Library.
+    *   Search for "Google Sheets API" and select it.
+    *   Click the **"Enable"** button.
 
-## Step 4: Set Environment Variables
+### Step 3: Create a Service Account
 
-### For Local Testing:
-```powershell
-# Set the spreadsheet ID
-$env:GOOGLE_SHEETS_ID="1ABC123XYZ789"
+A service account is a special type of Google account for an application (not a person).
 
-# Set the service account JSON (entire JSON content as one line)
-$env:GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"your-project"...}'
-```
+1.  **Navigate to Service Accounts:**
+    *   In the navigation menu (☰), go to **"IAM & Admin" -> "Service Accounts"**.
 
-### For Railway Deployment:
-1. Go to your Railway project
-2. Add environment variables:
-   - `GOOGLE_SHEETS_ID` = `1ABC123XYZ789`
-   - `GOOGLE_SERVICE_ACCOUNT_JSON` = `{"type":"service_account","project_id":"your-project"...}`
+2.  **Create the Service Account:**
+    *   Click **"+ Create Service Account"** at the top.
+    *   **Service account name:** Give it a descriptive name (e.g., `telegram-bot-editor`).
+    *   The **Service account ID** will be generated automatically.
+    *   Click **"Create and Continue"**.
 
-## Step 5: Test Integration
+3.  **Grant Permissions (Role):**
+    *   In the "Grant this service account access to project" step, click the **"Role"** dropdown.
+    *   Select **"Basic" -> "Editor"**. This role provides broad permissions to edit project resources, which includes Google Sheets owned by the project.
+    *   Click **"Continue"**.
 
-Run your bot and send `/start` - you should see a new row appear in your spreadsheet with:
-- User ID
-- Username
-- First Name
-- Last Name
-- Source (tiktok/organic)
-- Join Date
-- Last Message Date
-- Current Day
-- Total Messages
-- Status
+4.  **Finish Creation:**
+    *   You can skip the "Grant users access to this service account" step.
+    *   Click **"Done"**.
 
-## Available Commands
+### Step 4: Generate a JSON Key
 
-- `/stats` - View user statistics from the spreadsheet
-- `/start` - Register user and begin 30-day sequence
-- `/ping` - Test bot connectivity
+This key is a credentials file that your Python script will use to authenticate as the service account.
 
-## Spreadsheet Columns
+1.  **Open Your New Service Account:**
+    *   From the list of service accounts, click on the email address of the one you just created.
 
-| Column | Description |
-|--------|-------------|
-| User ID | Telegram user ID |
-| Username | @username |
-| First Name | User's first name |
-| Last Name | User's last name |
-| Source | tiktok/organic |
-| Joined At | When user first started |
-| Last Message | Last interaction time |
-| Current Day | Which day they're on (1-30) |
-| Total Messages | How many messages received |
-| Status | Active/Completed |
+2.  **Navigate to the Keys Tab:**
+    *   Click on the **"Keys"** tab.
 
-Your spreadsheet will automatically update in real-time as users interact with your bot! 📊
+3.  **Create a New Key:**
+    *   Click **"Add Key" -> "Create new key"**.
+
+4.  **Select JSON and Create:**
+    *   Choose **JSON** as the key type.
+    *   Click **"Create"**.
+    *   A JSON file will be automatically downloaded to your computer.
+
+5.  **Secure Your Key:**
+    *   **Treat this file like a password!** Do not share it publicly or commit it to version control.
+    *   Rename the downloaded file to `service_account.json` for simplicity and place it in your project folder.
+
+### Step 5: Create a Google Sheet and Share It
+
+1.  **Create a New Sheet:**
+    *   Go to [https://sheets.google.com/](https://sheets.google.com/) and create a new, blank spreadsheet.
+    *   Give it a name, for example, "Telegram Bot Users".
+
+2.  **Get the Service Account Email:**
+    *   Open your downloaded `service_account.json` file in a text editor.
+    *   Find the value for the `"client_email"` key. It will look something like this:
+        `"telegram-bot-editor@your-project-id.iam.gserviceaccount.com"`
+    *   Copy this entire email address.
+
+3.  **Share the Sheet:**
+    *   In your Google Sheet, click the **"Share"** button in the top-right corner.
+    *   Paste the service account's email address into the "Add people and groups" field.
+    *   Ensure it has **"Editor"** permissions.
+    *   Click **"Share"**.
+
+### Step 6: Get Your Spreadsheet ID
+
+1.  **Look at the URL of your spreadsheet.** It will be in this format:
+    `https://docs.google.com/spreadsheets/d/THIS_IS_THE_SPREADSHEET_ID/edit#gid=0`
+
+2.  **Copy the Spreadsheet ID.** It's the long string of characters between `/d/` and `/edit`.
+
+**Action Complete!**
+
+Once you have completed these steps, you will have:
+1.  A `service_account.json` file in your bot's folder.
+2.  Your unique **Spreadsheet ID**.
+
+**Please let me know once you have both of these items ready.** I will then proceed with Part 2, where I will write the Python code to connect your bot to the sheet.
