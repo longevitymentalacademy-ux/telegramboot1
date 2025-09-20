@@ -32,6 +32,7 @@ from sheets_integration import (
 
 # --- Configuration ---
 # Your bot token from BotFather
+# Trigger redeploy to pick up env vars
 TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
 # TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # if not TELEGRAM_BOT_TOKEN:
