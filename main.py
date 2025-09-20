@@ -1,9 +1,12 @@
 import os
 import logging
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, time
+from typing import Optional, List, Tuple
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+import sqlite3
+import pytz
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -16,6 +19,7 @@ from database import (
     mark_scheduled,
     mark_sent,
     get_pending_to_reschedule,
+    clear_all_schedules_from_db,
 )
 from messages import MESSAGES_30_DAYS
 from sheets_integration import (
@@ -26,39 +30,68 @@ from sheets_integration import (
 )
 
 
+# --- Configuration ---
+# Your bot token from BotFather
 TOKEN_ENV = "TELEGRAM_BOT_TOKEN"
-DEFAULT_TIME_HOUR = int(os.getenv("DAILY_MESSAGE_HOUR", "9"))  # 9 AM UTC by default
-MESSAGE_INTERVAL_HOURS = int(os.getenv("MESSAGE_INTERVAL_HOURS", "2"))  # 2 hours by default
-# If set to a positive integer, use hour/minute-based scheduling for testing instead of days
-FAST_SCHEDULE_HOURS = int(os.getenv("FAST_SCHEDULE_HOURS", "0"))
-FAST_SCHEDULE_MINUTES = int(os.getenv("FAST_SCHEDULE_MINUTES", "0"))
-PORT = int(os.getenv("PORT", "10000"))  # Render provides PORT env var
+# TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# if not TELEGRAM_BOT_TOKEN:
+#     raise RuntimeError("Please set TELEGRAM_BOT_TOKEN in your environment.")
+
+# --- Scheduling ---
+# How many hours between messages. For production, this should be 24.
+# MESSAGE_INTERVAL_HOURS = int(os.getenv("MESSAGE_INTERVAL_HOURS", 24))
+
+# --- Timezone & Time ---
+TARGET_TIMEZONE = "Europe/Rome"
+TARGET_HOUR = 8
+TARGET_MINUTE = 0
 
 
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/" or self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"Telegram Bot is running!")
-        else:
-            self.send_response(404)
-            self.end_headers()
+# --- Database ---
+DB_FILE = "bot_database.db"
+
+
+# --- Scheduling Logic ---
+def get_next_run_time() -> datetime:
+    """Calculates the next 8:00 AM in Italy time and returns it as a timezone-aware object."""
+    tz = pytz.timezone(TARGET_TIMEZONE)
+    now = datetime.now(tz)
     
-    def log_message(self, format, *args):
-        # Suppress HTTP server logs
-        pass
+    # Target time is 8:00 AM
+    target_time = time(TARGET_HOUR, TARGET_MINUTE)
+    
+    # Today's target time in the specified timezone
+    next_run = now.replace(hour=target_time.hour, minute=target_time.minute, second=0, microsecond=0)
+    
+    # If it's already past the target time today, schedule for the target time tomorrow
+    if now >= next_run:
+        next_run += timedelta(days=1)
+        
+    return next_run
 
+async def schedule_day_message(app: Application, user_id: int, day_index: int) -> None:
+    """Schedules a message for a given day to be sent at the next TARGET_TIME."""
+    # Check if job already exists to avoid duplicates
+    existing_jobs = app.job_queue.get_jobs_by_name(f"daily-{user_id}-{day_index}")
+    if existing_jobs:
+        print(f"Job daily-{user_id}-{day_index} already exists. Skipping schedule.")
+        return
 
-def start_health_server():
-    """Start a simple HTTP server for Render health checks"""
-    try:
-        server = HTTPServer(("0.0.0.0", PORT), HealthCheckHandler)
-        print(f"Health server starting on port {PORT}")
-        server.serve_forever()
-    except Exception as e:
-        print(f"Health server error: {e}")
+    # Calculate when to send this message (8 AM Italy Time)
+    when = get_next_run_time()
+    
+    print(f"Scheduling message for user {user_id}, day {day_index + 1} at {when} ({when.astimezone(pytz.utc)} UTC)")
+    
+    # Mark as scheduled in the database using UTC time
+    mark_scheduled(user_id, day_index, when.astimezone(pytz.utc).isoformat())
+    
+    app.job_queue.run_once(
+        send_day_message,
+        when=when,
+        chat_id=user_id,
+        name=f"daily-{user_id}-{day_index}",
+        data={"user_id": user_id, "day_index": day_index},
+    )
 
 
 async def send_day_message(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -75,66 +108,22 @@ async def send_day_message(context: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
-        mark_sent(user_id, day_index)
+        mark_sent(user_id, day_index, datetime.now(pytz.utc).isoformat())
         
-        # Update user progress in Google Sheets
-        current_day = day_index + 1  # Convert to 1-based day number
-        message_id = f"G{current_day}"  # G1, G2, G3, etc.
-        update_user_progress(user_id, current_day, message_id)
-        
-        # Schedule next day if exists and not already scheduled
-        next_day = day_index + 1
-        if next_day < len(MESSAGES_30_DAYS):
-            # Check if next day is already scheduled
-            existing_jobs = context.application.job_queue.get_jobs_by_name(f"daily-{user_id}-{next_day}")
-            if not existing_jobs:
-                # Schedule next message exactly MESSAGE_INTERVAL_HOURS from now
-                await schedule_day_message(context.application, user_id, next_day, delay_hours=MESSAGE_INTERVAL_HOURS)
+        # Update Google Sheet
+        if os.getenv("GOOGLE_SHEETS_ID"):
+            day_number = day_index + 1
+            message_id = f"G{day_number}"
+            update_user_progress(user_id, day_number, message_id)
+
+        # Schedule next day if it exists
+        next_day_index = day_index + 1
+        if next_day_index < len(MESSAGES_30_DAYS):
+            # Schedule next message for 8 AM the following day
+            await schedule_day_message(context.application, user_id, next_day_index)
     except Exception:
         # Intentionally minimal: do not crash job queue for a single failure
         pass
-
-
-def get_next_run_time_utc(day_number: int, hour_utc: int) -> datetime:
-    """Calculate when to send a specific day's message.
-    day_number: 1-based day number (Day 2 = day_number 2)
-    """
-    now = datetime.utcnow()
-    if FAST_SCHEDULE_HOURS > 0:
-        # Hour-based testing: Day 2 = 1 hour, Day 3 = 2 hours, etc.
-        return now + timedelta(hours=FAST_SCHEDULE_HOURS * (day_number - 1))
-    if FAST_SCHEDULE_MINUTES > 0:
-        # Minute-based testing: Day 2 = 1 minute, Day 3 = 2 minutes, etc.
-        return now + timedelta(minutes=FAST_SCHEDULE_MINUTES * (day_number - 1))
-    
-    # 2-hour interval schedule: Day 2 = 2 hours, Day 3 = 4 hours, etc.
-    return now + timedelta(hours=MESSAGE_INTERVAL_HOURS * (day_number - 1))
-
-
-async def schedule_day_message(app: Application, user_id: int, day_index: int, delay_hours: int = None) -> None:
-    # Check if job already exists to avoid duplicates
-    existing_jobs = app.job_queue.get_jobs_by_name(f"daily-{user_id}-{day_index}")
-    if existing_jobs:
-        return  # Job already scheduled, skip
-    
-    # Calculate when to send this message
-    now = datetime.utcnow()
-    if delay_hours is not None:
-        # Use specific delay (for immediate scheduling after sending previous message)
-        when = now + timedelta(hours=delay_hours)
-    else:
-        # Use standard interval calculation (for initial scheduling)
-        day_number = day_index + 1  # day_index 1 = Day 2, day_index 2 = Day 3, etc.
-        when = get_next_run_time_utc(day_number, DEFAULT_TIME_HOUR)
-    
-    mark_scheduled(user_id, day_index, when.isoformat())
-    app.job_queue.run_once(
-        send_day_message,
-        when=when,
-        chat_id=user_id,
-        name=f"daily-{user_id}-{day_index}",
-        data={"user_id": user_id, "day_index": day_index},
-    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -181,10 +170,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         if len(MESSAGES_30_DAYS) > 0:
             await context.bot.send_message(chat_id=user.id, text=MESSAGES_30_DAYS[0])
-            mark_sent(user.id, 0)
-            update_user_progress(user.id, 1, "G1")
-            
-            # Send Italian notification about automatic messaging
+            mark_sent(user.id, 0, datetime.now(pytz.utc).isoformat())
+
+            # Update Google Sheet for Day 1
+            if os.getenv("GOOGLE_SHEETS_ID"):
+                log_user_to_sheets(user.id, user.username, user.first_name, user.last_name, source)
+
+            # Send Italian notification about the schedule
             italian_notification = """
 🔔 **Notifica Automatica**
 
@@ -197,21 +189,18 @@ Ora inizierai a ricevere messaggi automatici ogni 2 ore per i prossimi 30 giorni
 Preparati per questo viaggio di crescita personale! 🚀
             """
             await context.bot.send_message(chat_id=user.id, text=italian_notification, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.message.reply_text("No messages configured for this bot.")
     except Exception:
         pass
     
-    # Schedule Day 2 exactly MESSAGE_INTERVAL_HOURS from now
+    # Schedule Day 2 for 8 AM tomorrow (Italy Time)
     if len(MESSAGES_30_DAYS) > 1:
-        await schedule_day_message(context.application, user.id, 1, delay_hours=MESSAGE_INTERVAL_HOURS)
+        await schedule_day_message(context.application, user.id, 1) # day_index=1 is Day 2
 
     origin = f" from {source}" if source else ""
     # Compose welcome text based on schedule mode
-    if FAST_SCHEDULE_HOURS > 0:
-        schedule_text = f"every {FAST_SCHEDULE_HOURS} hour(s) for testing."
-    elif FAST_SCHEDULE_MINUTES > 0:
-        schedule_text = f"every {FAST_SCHEDULE_MINUTES} minute(s) for testing."
-    else:
-        schedule_text = f"every {MESSAGE_INTERVAL_HOURS} hours."
+    schedule_text = f"every day at 8:00 AM Italy time."
     welcome_text = f"Welcome{origin}! You will receive messages {schedule_text}"
     if update.message:
         await update.message.reply_text(welcome_text)
@@ -248,24 +237,28 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def reschedule_all_pending(app: Application) -> None:
     # Reschedule any messages that were planned but not sent
     pending = get_pending_to_reschedule(datetime.utcnow().isoformat())
-    for row in pending:
-        user_id = int(row["user_id"])  # type: ignore[index]
-        day_index = int(row["day_index"])  # type: ignore[index]
-        # If job already exists, skip
-        existing = app.job_queue.get_jobs_by_name(f"daily-{user_id}-{day_index}")
-        if existing:
-            continue
-        # Convert 0-based day_index to 1-based day number
-        day_number = day_index + 1
-        when = get_next_run_time_utc(day_number, DEFAULT_TIME_HOUR)
-        mark_scheduled(user_id, day_index, when.isoformat())
-        app.job_queue.run_once(
-            send_day_message,
-            when=when,
-            chat_id=user_id,
-            name=f"daily-{user_id}-{day_index}",
-            data={"user_id": user_id, "day_index": day_index},
-        )
+    for user_id, day_index, scheduled_time_iso in pending:
+        try:
+            # The job name must be unique
+            job_name = f"daily-{user_id}-{day_index}"
+
+            # Avoid rescheduling if a job with the same name already exists
+            if app.job_queue.get_jobs_by_name(job_name):
+                print(f"Job {job_name} already in queue. Skipping reschedule.")
+                continue
+
+            scheduled_time_utc = datetime.fromisoformat(scheduled_time_iso).replace(tzinfo=pytz.utc)
+            
+            app.job_queue.run_once(
+                send_day_message,
+                when=scheduled_time_utc,
+                chat_id=user_id,
+                name=job_name,
+                data={"user_id": user_id, "day_index": day_index},
+            )
+            print(f"Rescheduled message for user {user_id}, day {day_index + 1} for {scheduled_time_utc}")
+        except Exception as e:
+            print(f"Failed to reschedule for user {user_id}, day {day_index}: {e}")
 
 
 async def on_startup(app: Application) -> None:
@@ -299,10 +292,14 @@ async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     google_id = os.getenv("GOOGLE_SHEETS_ID", "Not Set")
     creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
     service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-    interval = os.getenv("MESSAGE_INTERVAL_HOURS", "Not Set")
+    # interval = os.getenv("MESSAGE_INTERVAL_HOURS", "Not Set") # This is no longer used
     
     message += f"`GOOGLE_SHEETS_ID`: `{google_id}`\n"
-    message += f"`MESSAGE_INTERVAL_HOURS`: `{interval}`\n\n"
+    # message += f"`MESSAGE_INTERVAL_HOURS`: `{interval}`\n\n"
+    
+    message += f"\n*Time Settings:*\n"
+    message += f"`Timezone`: `{TARGET_TIMEZONE}`\n"
+    message += f"`Scheduled Time`: `{TARGET_HOUR:02d}:{TARGET_MINUTE:02d}`\n\n"
     
     message += f"*Credentials Check:*\n"
     message += f"`GOOGLE_CREDENTIALS_JSON`: `{'Present' if creds_json else 'Not Found'}`\n"
@@ -314,6 +311,24 @@ async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         message += "✅ A Google credentials variable was found."
 
     await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+
+async def clear_all_schedules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clears all scheduled jobs from the job queue and database (admin only)."""
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("You are not authorized to use this command.")
+        return
+    
+    # Clear from APScheduler
+    jobs = context.application.job_queue.jobs()
+    num_jobs = len(jobs)
+    for job in jobs:
+        job.schedule_removal()
+    
+    # Clear from database
+    clear_all_schedules_from_db()
+    
+    await update.message.reply_text(f"✅ All {num_jobs} scheduled jobs have been cleared from the queue and the database.")
 
 
 # --- Main Application ---
@@ -333,17 +348,20 @@ def main() -> None:
         .build()
     )
 
+    # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("ping", ping))
     application.add_handler(CommandHandler("stats", stats))
-    application.add_handler(CommandHandler("env", check_env, filters=filters.User(user_id=ADMIN_IDS))) # Add this line
+    application.add_handler(CommandHandler("env", check_env, filters=filters.User(user_id=ADMIN_IDS)))
+    application.add_handler(CommandHandler("clearschedules", clear_all_schedules, filters=filters.User(user_id=ADMIN_IDS)))
 
     # Start health check server in background thread
+    port = int(os.environ.get("PORT", 10000))
     health_thread = threading.Thread(target=start_health_server, daemon=True)
     health_thread.start()
     
     # Run the bot
-    print(f"Bot starting with health server on port {PORT}")
+    print(f"Bot starting with health server on port {port}")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

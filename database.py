@@ -112,4 +112,13 @@ def get_pending_to_reschedule(current_time_iso: str) -> List[sqlite3.Row]:
         return rows
 
 
+def clear_all_schedules_from_db():
+    """Deletes all records from the schedules table."""
+    with get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM schedules")
+        conn.commit()
+        print("All schedules cleared from the database.")
+
+
 
