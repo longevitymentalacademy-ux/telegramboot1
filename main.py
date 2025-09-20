@@ -355,13 +355,7 @@ def main() -> None:
     application.add_handler(CommandHandler("env", check_env, filters=filters.User(user_id=ADMIN_IDS)))
     application.add_handler(CommandHandler("clearschedules", clear_all_schedules, filters=filters.User(user_id=ADMIN_IDS)))
 
-    # Start health check server in background thread
-    port = int(os.environ.get("PORT", 10000))
-    health_thread = threading.Thread(target=start_health_server, daemon=True)
-    health_thread.start()
-    
     # Run the bot
-    print(f"Bot starting with health server on port {port}")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
