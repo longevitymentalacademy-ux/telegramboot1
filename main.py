@@ -317,6 +317,21 @@ async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
 
+
+async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Public, safe env check that reports only presence flags."""
+    google_id = os.getenv("GOOGLE_SHEETS_ID")
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+
+    lines = [
+        "Env check (safe):",
+        f"GOOGLE_SHEETS_ID: {'Set' if google_id else 'Not Set'}",
+        f"Credentials JSON: {'Present' if creds_json else 'Not Found'}",
+        f"Timezone: {TARGET_TIMEZONE}",
+        f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",
+    ]
+    await update.message.reply_text("\n".join(lines))
+
 async def clear_all_schedules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clears all scheduled jobs from the job queue and database (admin only)."""
     user = update.effective_user
@@ -359,6 +374,7 @@ def main() -> None:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("env", check_env, filters=filters.User(user_id=ADMIN_IDS)))
     application.add_handler(CommandHandler("clearschedules", clear_all_schedules, filters=filters.User(user_id=ADMIN_IDS)))
+    application.add_handler(CommandHandler("envcheck", check_env_public))
 
     # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
