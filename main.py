@@ -7,7 +7,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, filters
 
 from database import (
     initialize_database,
@@ -283,6 +283,40 @@ async def on_startup(app: Application) -> None:
     await reschedule_all_pending(app)
 
 
+# --- Admin Command ---
+ADMIN_IDS = [5170262928, 6136713410]  # Your user ID is added for admin commands
+
+async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Sends a list of relevant environment variables (admin only)."""
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("You are not authorized to use this command.")
+        return
+
+    message = "🔍 **Environment Variables on Server**\n\n"
+    
+    # Check for the variables we care about
+    google_id = os.getenv("GOOGLE_SHEETS_ID", "Not Set")
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    service_account_json = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    interval = os.getenv("MESSAGE_INTERVAL_HOURS", "Not Set")
+    
+    message += f"`GOOGLE_SHEETS_ID`: `{google_id}`\n"
+    message += f"`MESSAGE_INTERVAL_HOURS`: `{interval}`\n\n"
+    
+    message += f"*Credentials Check:*\n"
+    message += f"`GOOGLE_CREDENTIALS_JSON`: `{'Present' if creds_json else 'Not Found'}`\n"
+    message += f"`GOOGLE_SERVICE_ACCOUNT_JSON`: `{'Present' if service_account_json else 'Not Found'}`\n\n"
+
+    if not creds_json and not service_account_json:
+        message += "⚠️ **CRITICAL: No Google credentials variable was found!**"
+    else:
+        message += "✅ A Google credentials variable was found."
+
+    await update.message.reply_text(message, parse_mode=ParseMode.MARKDOWN_V2)
+
+
+# --- Main Application ---
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -302,6 +336,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("ping", ping))
     application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("env", check_env, filters=filters.User(user_id=ADMIN_IDS))) # Add this line
 
     # Start health check server in background thread
     health_thread = threading.Thread(target=start_health_server, daemon=True)
