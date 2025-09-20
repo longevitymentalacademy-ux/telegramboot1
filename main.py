@@ -145,13 +145,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     
     # Log user to Google Sheets
-    log_user_to_sheets(
-        user_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        source=source or "organic"
-    )
+    # log_user_to_sheets(
+    #     user_id=user.id,
+    #     username=user.username,
+    #     first_name=user.first_name,
+    #     last_name=user.last_name,
+    #     source=source or "organic"
+    # )
 
     # Clear any existing scheduled jobs for this user to restart fresh
     all_jobs = context.application.job_queue.jobs()
@@ -173,8 +173,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             mark_sent(user.id, 0, datetime.now(pytz.utc).isoformat())
 
             # Update Google Sheet for Day 1
-            if os.getenv("GOOGLE_SHEETS_ID"):
-                log_user_to_sheets(user.id, user.username, user.first_name, user.last_name, source)
+            # if os.getenv("GOOGLE_SHEETS_ID"):
+            #     log_user_to_sheets(user.id, user.username, user.first_name, user.last_name, source)
 
             # Send Italian notification about the schedule
             italian_notification = """
@@ -263,10 +263,10 @@ async def reschedule_all_pending(app: Application) -> None:
 
 async def on_startup(app: Application) -> None:
     initialize_database()
-    initialize_spreadsheet()  # Initialize Google Sheets
+    # initialize_spreadsheet()  # Initialize Google Sheets
     
     # Production deployment - database persists across restarts
-    print("🚀 Bot starting with accurate 2-hour interval scheduling...")
+    print("🚀 Bot starting...")
     
     # Ensure polling works even if a webhook was previously set
     try:
