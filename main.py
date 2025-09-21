@@ -111,11 +111,13 @@ async def send_day_message(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.send_message(chat_id=user_id, text=text, parse_mode=ParseMode.HTML)
         mark_sent(user_id, day_index, datetime.now(pytz.utc).isoformat())
         
-        # Update Google Sheet
-        if os.getenv("GOOGLE_SHEETS_ID"):
+        # Update Google Sheet (always try to update)
+        try:
             day_number = day_index + 1
             message_id = f"G{day_number}"
             update_user_progress(user_id, day_number, message_id)
+        except Exception as e:
+            print(f"Warning: Failed to update Google Sheets: {e}")
 
         # Schedule next day if it exists
         next_day_index = day_index + 1
@@ -146,13 +148,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     
     # Log user to Google Sheets
-    log_user_to_sheets(
-        user_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        last_name=user.last_name,
-        source=source or "organic"
-    )
+    try:
+        log_user_to_sheets(
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            source=source or "organic"
+        )
+    except Exception as e:
+        print(f"Warning: Failed to log user to Google Sheets: {e}")
 
     # Clear any existing scheduled jobs for this user to restart fresh
     all_jobs = context.application.job_queue.jobs()
@@ -174,8 +179,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             mark_sent(user.id, 0, datetime.now(pytz.utc).isoformat())
 
             # Update Google Sheet for Day 1
-            if os.getenv("GOOGLE_SHEETS_ID"):
+            try:
                 log_user_to_sheets(user.id, user.username, user.first_name, user.last_name, source)
+            except Exception as e:
+                print(f"Warning: Failed to log user to Google Sheets: {e}")
 
             # Send Italian notification about the schedule
             italian_notification = """
@@ -321,17 +328,22 @@ async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Public, safe env check that reports only presence flags."""
-    google_id = os.getenv("GOOGLE_SHEETS_ID")
-    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+    # Check if service_account.json file exists
+    import os
+    service_account_exists = os.path.exists("service_account.json")
     
-    # Debug: Check all environment variables containing "GOOGLE" or "SHEET"
-    all_env_vars = [key for key in os.environ.keys() if "GOOGLE" in key.upper() or "SHEET" in key.upper()]
+    # Check Google Sheets connection
+    try:
+        from sheets_integration import _get_worksheet
+        worksheet = _get_worksheet()
+        sheets_connected = worksheet is not None
+    except Exception:
+        sheets_connected = False
     
     lines = [
         "Env check (safe):",
-        f"GOOGLE_SHEETS_ID: {'Set' if google_id else 'Not Set'}",
-        f"Credentials JSON: {'Present' if creds_json else 'Not Found'}",
-        f"Google env vars found: {len(all_env_vars)}",
+        f"Service Account File: {'Found' if service_account_exists else 'Not Found'}",
+        f"Google Sheets: {'Connected' if sheets_connected else 'Not Connected'}",
         f"Timezone: {TARGET_TIMEZONE}",
         f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",
     ]

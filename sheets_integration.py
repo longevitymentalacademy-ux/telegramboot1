@@ -26,40 +26,20 @@ def _get_worksheet():
         return worksheet
 
     try:
-        client = None
+        print("DEBUG: Attempting to connect to Google Sheets...")
         
-        # Try to load credentials from environment variable (for Railway/Production)
-        creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-        
-        print(f"DEBUG: Found Google credentials environment variable: {bool(creds_json_str)}")
-
-        if creds_json_str:
-            try:
-                # Parse JSON string from environment variable
-                creds_info = json.loads(creds_json_str)
-                print("DEBUG: Successfully parsed GOOGLE_CREDENTIALS_JSON")
-                
-                # Use gspread.service_account_from_dict() for authentication
-                client = gspread.service_account_from_dict(creds_info)
-                print("DEBUG: Successfully authenticated with service_account_from_dict()")
-                
-            except json.JSONDecodeError as e:
-                print(f"CRITICAL ERROR: Could not parse GOOGLE_CREDENTIALS_JSON. Make sure it's valid JSON. Error: {e}")
-                return None
-            except Exception as e:
-                print(f"CRITICAL ERROR: Failed to authenticate with environment variable credentials. Error: {e}")
-                return None
-        
-        # Fallback: If env var is not found, try local file (for local testing)
-        if not client:
-            try:
-                print("DEBUG: Environment variable not found, trying local service_account.json file...")
-                client = gspread.service_account("service_account.json")
-                print("DEBUG: Successfully authenticated with local service_account.json")
-            except FileNotFoundError:
-                print("CRITICAL ERROR: Neither GOOGLE_CREDENTIALS_JSON environment variable nor service_account.json file found.")
-                print("Please set the environment variable in Railway or add the service_account.json file for local testing.")
-                return None
+        # Use local service_account.json file (simpler and more reliable)
+        try:
+            print("DEBUG: Looking for service_account.json...")
+            client = gspread.service_account("service_account.json")
+            print("DEBUG: Successfully authenticated with local service_account.json")
+        except FileNotFoundError:
+            print("CRITICAL ERROR: service_account.json file not found.")
+            print("Please ensure the service_account.json file is in the project root directory.")
+            return None
+        except Exception as e:
+            print(f"CRITICAL ERROR: Failed to authenticate with service_account.json. Error: {e}")
+            return None
         
         # Open the spreadsheet and select the worksheet
         print(f"DEBUG: Opening spreadsheet with ID: {SPREADSHEET_ID}")
