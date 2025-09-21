@@ -328,8 +328,8 @@ async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Public, safe env check that reports only presence flags."""
-    # Check if service_account.json file exists
-    import os
+    # Check environment variables and local file
+    base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
     service_account_exists = os.path.exists("service_account.json")
     
     # Check Google Sheets connection
@@ -342,7 +342,8 @@ async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     lines = [
         "Env check (safe):",
-        f"Service Account File: {'Found' if service_account_exists else 'Not Found'}",
+        f"Base64 Credentials: {'Set' if base64_creds else 'Not Set'}",
+        f"Local File: {'Found' if service_account_exists else 'Not Found'}",
         f"Google Sheets: {'Connected' if sheets_connected else 'Not Connected'}",
         f"Timezone: {TARGET_TIMEZONE}",
         f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",

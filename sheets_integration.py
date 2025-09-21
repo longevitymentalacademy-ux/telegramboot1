@@ -27,19 +27,35 @@ def _get_worksheet():
 
     try:
         print("DEBUG: Attempting to connect to Google Sheets...")
+        client = None
         
-        # Use local service_account.json file (simpler and more reliable)
-        try:
-            print("DEBUG: Looking for service_account.json...")
-            client = gspread.service_account("service_account.json")
-            print("DEBUG: Successfully authenticated with local service_account.json")
-        except FileNotFoundError:
-            print("CRITICAL ERROR: service_account.json file not found.")
-            print("Please ensure the service_account.json file is in the project root directory.")
-            return None
-        except Exception as e:
-            print(f"CRITICAL ERROR: Failed to authenticate with service_account.json. Error: {e}")
-            return None
+        # Try Base64 encoded credentials from environment variable first
+        encoded_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
+        if encoded_creds:
+            try:
+                import base64
+                print("DEBUG: Found Base64 encoded credentials, decoding...")
+                decoded_json = base64.b64decode(encoded_creds).decode('utf-8')
+                creds_info = json.loads(decoded_json)
+                client = gspread.service_account_from_dict(creds_info)
+                print("DEBUG: Successfully authenticated with Base64 encoded credentials")
+            except Exception as e:
+                print(f"CRITICAL ERROR: Failed to decode Base64 credentials. Error: {e}")
+                return None
+        
+        # Fallback: Try local service_account.json file
+        if not client:
+            try:
+                print("DEBUG: Trying local service_account.json file...")
+                client = gspread.service_account("service_account.json")
+                print("DEBUG: Successfully authenticated with local service_account.json")
+            except FileNotFoundError:
+                print("CRITICAL ERROR: No credentials found.")
+                print("Please set GOOGLE_CREDENTIALS_BASE64 environment variable or add service_account.json file.")
+                return None
+            except Exception as e:
+                print(f"CRITICAL ERROR: Failed to authenticate with service_account.json. Error: {e}")
+                return None
         
         # Open the spreadsheet and select the worksheet
         print(f"DEBUG: Opening spreadsheet with ID: {SPREADSHEET_ID}")
