@@ -323,11 +323,15 @@ async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Public, safe env check that reports only presence flags."""
     google_id = os.getenv("GOOGLE_SHEETS_ID")
     creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON") or os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-
+    
+    # Debug: Check all environment variables containing "GOOGLE" or "SHEET"
+    all_env_vars = [key for key in os.environ.keys() if "GOOGLE" in key.upper() or "SHEET" in key.upper()]
+    
     lines = [
         "Env check (safe):",
         f"GOOGLE_SHEETS_ID: {'Set' if google_id else 'Not Set'}",
         f"Credentials JSON: {'Present' if creds_json else 'Not Found'}",
+        f"Google env vars found: {len(all_env_vars)}",
         f"Timezone: {TARGET_TIMEZONE}",
         f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",
     ]
