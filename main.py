@@ -328,33 +328,36 @@ async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Public, safe env check that reports only presence flags."""
-    # Check environment variables and local file
-    base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
-    service_account_exists = os.path.exists("service_account.json")
-    
-    # Debug: List all environment variables that contain "GOOGLE" or "CRED"
-    import os
-    google_vars = [key for key in os.environ.keys() if "GOOGLE" in key.upper() or "CRED" in key.upper()]
-    
-    # Check Google Sheets connection
     try:
-        from sheets_integration import _get_worksheet
-        worksheet = _get_worksheet()
-        sheets_connected = worksheet is not None
-    except Exception:
-        sheets_connected = False
-    
-    lines = [
-        "Env check (safe):",
-        f"Base64 Credentials: {'Set' if base64_creds else 'Not Set'}",
-        f"Local File: {'Found' if service_account_exists else 'Not Found'}",
-        f"Google Sheets: {'Connected' if sheets_connected else 'Not Connected'}",
-        f"Timezone: {TARGET_TIMEZONE}",
-        f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",
-        f"Google/Cred vars found: {len(google_vars)}",
-        f"Vars: {', '.join(google_vars[:3]) if google_vars else 'None'}",
-    ]
-    await update.message.reply_text("\n".join(lines))
+        # Check environment variables and local file
+        base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
+        service_account_exists = os.path.exists("service_account.json")
+        
+        # Debug: List all environment variables that contain "GOOGLE" or "CRED"
+        import os
+        google_vars = [key for key in os.environ.keys() if "GOOGLE" in key.upper() or "CRED" in key.upper()]
+        
+        # Check Google Sheets connection
+        try:
+            from sheets_integration import _get_worksheet
+            worksheet = _get_worksheet()
+            sheets_connected = worksheet is not None
+        except Exception as e:
+            sheets_connected = False
+        
+        lines = [
+            "Env check (safe):",
+            f"Base64 Credentials: {'Set' if base64_creds else 'Not Set'}",
+            f"Local File: {'Found' if service_account_exists else 'Not Found'}",
+            f"Google Sheets: {'Connected' if sheets_connected else 'Not Connected'}",
+            f"Timezone: {TARGET_TIMEZONE}",
+            f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",
+            f"Google/Cred vars found: {len(google_vars)}",
+            f"Vars: {', '.join(google_vars[:3]) if google_vars else 'None'}",
+        ]
+        await update.message.reply_text("\n".join(lines))
+    except Exception as e:
+        await update.message.reply_text(f"Error in envcheck: {str(e)}")
 
 async def clear_all_schedules(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clears all scheduled jobs from the job queue and database (admin only)."""
