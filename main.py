@@ -332,6 +332,10 @@ async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
     service_account_exists = os.path.exists("service_account.json")
     
+    # Debug: List all environment variables that contain "GOOGLE" or "CRED"
+    import os
+    google_vars = [key for key in os.environ.keys() if "GOOGLE" in key.upper() or "CRED" in key.upper()]
+    
     # Check Google Sheets connection
     try:
         from sheets_integration import _get_worksheet
@@ -347,6 +351,8 @@ async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         f"Google Sheets: {'Connected' if sheets_connected else 'Not Connected'}",
         f"Timezone: {TARGET_TIMEZONE}",
         f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",
+        f"Google/Cred vars found: {len(google_vars)}",
+        f"Vars: {', '.join(google_vars[:3]) if google_vars else 'None'}",
     ]
     await update.message.reply_text("\n".join(lines))
 
