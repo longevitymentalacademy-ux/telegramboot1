@@ -30,7 +30,7 @@ def _get_worksheet():
         client = None
         
         # Try Base64 encoded credentials from environment variable first
-        encoded_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
+        encoded_creds = os.getenv("GOOGLE_CREDS") or os.getenv("GOOGLE_CREDENTIALS_BASE64")
         if encoded_creds:
             try:
                 import base64

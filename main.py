@@ -331,7 +331,7 @@ async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     try:
         import os
         # Check environment variables and local file
-        base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
+        base64_creds = os.getenv("GOOGLE_CREDS") or os.getenv("GOOGLE_CREDENTIALS_BASE64")
         service_account_exists = os.path.exists("service_account.json")
         
         # Debug: List all environment variables that contain "GOOGLE" or "CRED"
