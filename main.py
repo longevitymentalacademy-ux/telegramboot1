@@ -405,6 +405,13 @@ def main() -> None:
     application.add_handler(CommandHandler("clearschedules", clear_all_schedules, filters=filters.User(user_id=ADMIN_IDS)))
     application.add_handler(CommandHandler("envcheck", check_env_public))
 
+    # Check if running on Google Cloud (has PORT env var)
+    port = os.getenv("PORT")
+    if port:
+        print(f"Running on Google Cloud Run on port {port}")
+    else:
+        print("Running in polling mode (local/Railway)")
+
     # Run the bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
