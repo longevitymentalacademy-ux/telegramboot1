@@ -330,6 +330,7 @@ async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """Public, safe env check that reports only presence flags."""
     try:
         import os
+        from datetime import datetime
         # Check environment variables and local file
         base64_creds = os.getenv("GOOGLE_CREDS") or os.getenv("GOOGLE_CREDENTIALS_BASE64")
         service_account_exists = os.path.exists("service_account.json")
@@ -352,8 +353,9 @@ async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"Google Sheets: {'Connected' if sheets_connected else 'Not Connected'}",
             f"Timezone: {TARGET_TIMEZONE}",
             f"Schedule: {TARGET_HOUR:02d}:{TARGET_MINUTE:02d}",
-            f"Google/Cred vars found: {len(google_vars)}",
-            f"Vars: {', '.join(google_vars[:3]) if google_vars else 'None'}",
+        f"Google/Cred vars found: {len(google_vars)}",
+        f"Vars: {', '.join(google_vars[:3]) if google_vars else 'None'}",
+        f"Deployment: {datetime.now().strftime('%H:%M:%S')}",
         ]
         await update.message.reply_text("\n".join(lines))
     except Exception as e:
