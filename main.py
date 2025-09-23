@@ -329,12 +329,12 @@ async def check_env(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def check_env_public(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Public, safe env check that reports only presence flags."""
     try:
+        import os
         # Check environment variables and local file
         base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
         service_account_exists = os.path.exists("service_account.json")
         
         # Debug: List all environment variables that contain "GOOGLE" or "CRED"
-        import os
         google_vars = [key for key in os.environ.keys() if "GOOGLE" in key.upper() or "CRED" in key.upper()]
         
         # Check Google Sheets connection
