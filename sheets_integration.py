@@ -111,7 +111,7 @@ def log_user_to_sheets(user_id, username, first_name, last_name, source):
         ws.update(f'A{row_number}:E{row_number}', [update_values])
         print(f"🔄 Existing user {user_id} reset to Day 1 in Google Sheet.")
 
-    except gspread.exceptions.CellNotFound:
+    except Exception:
         # If user is not found, add them as a new row
         new_row = [
             user_id,
@@ -143,7 +143,7 @@ def update_user_progress(user_id, current_day, message_id):
         ws.update_cell(row_number, 4, message_id)
         ws.update_cell(row_number, 5, status)
 
-    except gspread.exceptions.CellNotFound:
+    except Exception:
         # This can happen if the user was added before sheets was integrated
         print(f"User {user_id} not found in sheet for updating, skipping.")
     except Exception as e:
