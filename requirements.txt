@@ -4,5 +4,5 @@ google-auth==2.23.4
 google-auth-oauthlib==1.2.2
 requests==2.32.5
 pytz==2024.1
-Flask>=2.3
+pysqlite3-binary
 
