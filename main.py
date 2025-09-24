@@ -67,9 +67,23 @@ async def on_startup(app: Application):
     await app.bot.delete_webhook(drop_pending_updates=True)
 
 def main():
+    # Debug: Print all environment variables
+    print("DEBUG: All environment variables:")
+    for key, value in os.environ.items():
+        if 'TOKEN' in key.upper() or 'BOT' in key.upper():
+            print(f"  {key} = {value[:20]}..." if len(value) > 20 else f"  {key} = {value}")
+    
     token = os.getenv(TOKEN_ENV)
+    print(f"DEBUG: Looking for {TOKEN_ENV}")
+    print(f"DEBUG: Found token: {token[:20] + '...' if token and len(token) > 20 else token}")
+    
     if not token:
-        raise ValueError(f"{TOKEN_ENV} not set!")
+        # Try alternative environment variable names
+        token = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN") or os.getenv("TOKEN")
+        print(f"DEBUG: Alternative token search result: {token[:20] + '...' if token and len(token) > 20 else token}")
+    
+    if not token:
+        raise ValueError(f"{TOKEN_ENV} not set! Available env vars: {list(os.environ.keys())}")
     
     app = Application.builder().token(token).post_init(on_startup).build()
     app.add_handler(CommandHandler("start", start))
