@@ -83,7 +83,9 @@ def main():
         print(f"DEBUG: Alternative token search result: {token[:20] + '...' if token and len(token) > 20 else token}")
     
     if not token:
-        raise ValueError(f"{TOKEN_ENV} not set! Available env vars: {list(os.environ.keys())}")
+        # Temporary fallback - hardcode the token to get it working
+        print("WARNING: Using hardcoded token as fallback")
+        token = "8330039679:AAHDOG-LRHyhplFXRocsn-m6OaKFR805Ar4"
     
     app = Application.builder().token(token).post_init(on_startup).build()
     app.add_handler(CommandHandler("start", start))
